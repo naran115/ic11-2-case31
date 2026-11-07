@@ -1,0 +1,386 @@
+---
+title: "Case 31: Summary of Data Analysis"
+subtitle: "IC11-2 | R1, R2, R5, and R6 | Employees Federal Credit Union"
+author: "Aldo Naranjo"
+date: today
+format:
+  revealjs:
+    theme: simple
+    slide-number: true
+    scrollable: true
+    smaller: true
+    embed-resources: true
+    code-fold: true
+    code-summary: "Show R code"
+    toc: false
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Overview
+
+> *Using R, obtain appropriate descriptive and inferential statistics. Using a QMD file, summarize the data analysis for R1, R2, R5, and R6 for Case 31, and insert the R output that supports each finding.*
+
+| RQ | Research question | Items used |
+|:--|:--|:--|
+| R1 | Why do people join the credit union? | q7 (q2 is not in the data file) |
+| R2 | Why do members use other institutions when they need to borrow? | q8, q30 (q28 and q29 are not in the data file) |
+| R5 | How aware are members of the services the credit union offers? | q13 to q26 |
+| R6 | What do members think about how effectively the credit union is operated? | q9 to q12, q31 to q34, plus q37 |
+
+For every question the descriptive statistics come first. Inferential tests follow only to check whether what the descriptives show holds up: a one sample t test against the neutral midpoint for rating scale items, and a chi square goodness of fit test for categorical items.
+
+## Data and setup
+
+The cleaned file from IC10-2-1 is used, so the special codes are already missing, q7, q8, q10, and q37 are reversed (higher means higher rates or a better rating), and the 128 respondents are all retained.
+
+```{r}
+#| label: setup
+#| code-fold: false
+library(tidyverse)
+library(haven)
+library(labelled)
+library(knitr)
+
+data <- read_sav("Case 31 Data_efcu_1_AN_cleaned.sav") |>
+  # Put value labels in code order so tables and charts run low to high
+  sort_val_labels()
+
+# Readable service names for the awareness items
+service_name <- function(v) {
+  var_label(data[[v]]) |>
+    str_to_sentence() |>
+    str_replace_all(c("\\bIra\\b" = "IRA", "Master credit" = "Mastercard credit"))
+}
+
+theme_set(theme_minimal(base_size = 14))
+
+# Frequency table with valid percents for one labelled item
+freq_table <- function(df, var) {
+  df |>
+    mutate(response = as_factor({{ var }}, levels = "labels")) |>
+    filter(!is.na(response)) |>
+    count(response, .drop = TRUE) |>
+    filter(n > 0) |>
+    mutate(percent = round(n / sum(n) * 100, 1))
+}
+
+# Mean, SD, median and a one sample t test against a midpoint
+t_summary <- function(df, vars, mu = 3) {
+  map_dfr(vars, \(v) {
+    x <- as.numeric(df[[v]])
+    test <- t.test(x, mu = mu)
+    tibble(
+      item = v,
+      label = var_label(df[[v]]),
+      n = sum(!is.na(x)),
+      mean = round(mean(x, na.rm = TRUE), 2),
+      sd = round(sd(x, na.rm = TRUE), 2),
+      median = median(x, na.rm = TRUE),
+      t = round(unname(test$statistic), 2),
+      df = unname(test$parameter),
+      p = format.pval(test$p.value, digits = 2, eps = 0.001)
+    )
+  })
+}
+
+nrow(data)
+```
+
+# R1: Why do people join the credit union?
+
+## R1: Descriptive statistics
+
+The reasons for joining (q2) were collected as check all that apply and are not in the data file, so R1 can only be approached through q7, members' opinion of the rates the credit union pays on share (savings) accounts. "Higher interest rates on savings" is one of the reasons listed in q2, so q7 tells us whether savings rates are a likely draw.
+
+::: {.columns}
+::: {.column width="45%"}
+```{r}
+#| label: tbl-r1-q7
+#| tbl-cap: "Opinion of rates paid on share accounts (q7)"
+data |>
+  freq_table(q7r) |>
+  kable(col.names = c("Rate paid on savings", "n", "%"))
+```
+:::
+
+::: {.column width="55%"}
+```{r}
+#| label: fig-r1-q7
+#| fig-cap: "Most members rate savings rates as average"
+#| fig-height: 4
+data |>
+  freq_table(q7r) |>
+  ggplot(aes(x = response, y = percent)) +
+  geom_col(fill = "#2c7fb8") +
+  geom_text(aes(label = str_c(percent, "%")), vjust = -0.4) +
+  labs(x = NULL, y = "Percent of members with an opinion") +
+  ylim(0, 80)
+```
+:::
+:::
+
+## R1: One sample t test
+
+```{r}
+#| label: tbl-r1-ttest
+#| tbl-cap: "q7r compared with the neutral midpoint (3 = average)"
+data |>
+  t_summary("q7r", mu = 3) |>
+  kable()
+```
+
+## R1: Insight
+
+Savings rates do not look like the reason people join. As @tbl-r1-q7 and @fig-r1-q7 show, 70% of members who gave an opinion call the rates the credit union pays on savings "average," about 19% call them high, and 11% call them low. The average rating sits right at the midpoint and is not meaningfully different from "average" (t = 1.30, p = .20).
+
+In plain terms, members do not see their savings earning more here than elsewhere, so rates are probably not what brought them in. That points toward the other reasons on the questionnaire, such as convenience or a personal connection to the workplace, but the q2 responses would be needed to confirm which one matters most. **Recommendation:** add q2 to the data file before the board relies on this question.
+
+# R2: Why do members borrow from other institutions?
+
+## R2: Descriptive statistics
+
+q28 (borrowed elsewhere last year) and q29 (the reasons) are not in the data file. R2 is approached through the two items that speak to the most common reason people shop elsewhere for a loan, which is price: q8 (opinion of the rates the credit union charges) and q30 (agreement that the credit union's loan rates are lower than other institutions).
+
+::: {.columns}
+::: {.column width="50%"}
+```{r}
+#| label: tbl-r2-q8
+#| tbl-cap: "Opinion of rates charged to borrow (q8)"
+data |>
+  freq_table(q8r) |>
+  kable(col.names = c("Loan rate charged", "n", "%"))
+```
+:::
+
+::: {.column width="50%"}
+```{r}
+#| label: tbl-r2-q30
+#| tbl-cap: "CU loan rates are lower than other institutions (q30)"
+data |>
+  freq_table(q30) |>
+  kable(col.names = c("Agreement", "n", "%"))
+```
+:::
+:::
+
+## R2: Descriptive statistics (chart)
+
+```{r}
+#| label: fig-r2
+#| fig-cap: "Members mostly see loan rates as average, and nearly half are unsure they beat competitors"
+#| fig-height: 4.5
+bind_rows(
+  data |> freq_table(q8r) |> mutate(item = "q8: Loan rate charged"),
+  data |> freq_table(q30) |> mutate(item = "q30: CU rates are lower")
+) |>
+  ggplot(aes(x = response, y = percent)) +
+  geom_col(fill = "#2c7fb8") +
+  geom_text(aes(label = str_c(percent, "%")), vjust = -0.4, size = 3.5) +
+  facet_wrap(~item, scales = "free_x") +
+  labs(x = NULL, y = "Percent") +
+  ylim(0, 65) +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+## R2: One sample t tests
+
+```{r}
+#| label: tbl-r2-ttest
+#| tbl-cap: "q8r and q30 compared with the neutral midpoint (3)"
+data |>
+  t_summary(c("q8r", "q30"), mu = 3) |>
+  kable()
+```
+
+## R2: Insight
+
+The credit union does not have a price edge on loans in members' eyes. More than half of members with an opinion call its loan rates "average" (@tbl-r2-q8), and slightly more call them high (28%) than low (17%). On whether the credit union beats other lenders, 46% are uncertain, 30% agree, and 24% disagree (@tbl-r2-q30). Neither average differs meaningfully from neutral (q8r: t = 1.91, p = .06; q30: t = 0.82, p = .42).
+
+So when a member needs a loan, nothing about the rate gives them a reason to choose the credit union over a bank, and a large group simply does not know how its rates compare. That gap is something marketing can close quickly: if the rates really are competitive, showing a side by side comparison would give members a reason to borrow here first. The actual reasons members went elsewhere (q29) are still needed to confirm this.
+
+# R5: How aware are members of the services offered?
+
+## R5: Descriptive statistics
+
+```{r}
+#| label: tbl-r5-aware
+#| tbl-cap: "Awareness and use of the credit union's services, sorted from most to least known (row percents, n = 128)"
+aware_items <- str_c("q", 13:26)
+
+awareness <- data |>
+  select(all_of(aware_items)) |>
+  pivot_longer(everything(), names_to = "item", values_to = "code") |>
+  mutate(code = as.numeric(code)) |>
+  count(item, code) |>
+  mutate(percent = round(n / sum(n) * 100, 1), .by = item) |>
+  mutate(
+    status = factor(
+      code,
+      levels = 1:3,
+      labels = c("Aware and have used", "Aware but have not used", "Unaware")
+    ),
+    service = map_chr(item, service_name)
+  )
+
+awareness_wide <- awareness |>
+  select(item, service, status, percent) |>
+  pivot_wider(names_from = status, values_from = percent, values_fill = 0) |>
+  mutate(`Aware (total)` = `Aware and have used` + `Aware but have not used`) |>
+  arrange(desc(`Aware (total)`))
+
+awareness_wide |>
+  select(-item) |>
+  kable()
+```
+
+## R5: Descriptive statistics (chart)
+
+```{r}
+#| label: fig-r5
+#| fig-cap: "Loan products are widely known, while savings extras and IRA loans are not"
+#| fig-height: 5.5
+awareness |>
+  mutate(service = factor(service, levels = rev(awareness_wide$service))) |>
+  ggplot(aes(x = percent, y = service, fill = status)) +
+  geom_col() +
+  scale_fill_manual(values = c("#2c7fb8", "#a6bddb", "#d9d9d9")) +
+  labs(x = "Percent of members", y = NULL, fill = NULL) +
+  theme(legend.position = "top")
+```
+
+## R5: Chi square goodness of fit tests
+
+Each test asks whether members are spread evenly across the three awareness categories (one third each). A significant result means awareness is concentrated in one or two categories rather than spread evenly.
+
+```{r}
+#| label: tbl-r5-chisq
+#| tbl-cap: "Chi square goodness of fit for each service (equal expected proportions)"
+map_dfr(aware_items, \(v) {
+  counts <- table(factor(as.numeric(data[[v]]), levels = 1:3))
+  test <- chisq.test(counts)
+  tibble(
+    service = service_name(v),
+    `chi square` = round(unname(test$statistic), 2),
+    df = unname(test$parameter),
+    p = format.pval(test$p.value, digits = 2, eps = 0.001)
+  )
+}) |>
+  kable()
+```
+
+## R5: Insight
+
+Members know about the loan products but rarely use them, and several savings products are largely unknown. Every member is aware of line of credit loans, and 90% or more know about new car, signature, and late model car loans (@tbl-r5-aware). Yet use is low across the board: outside the Mastercard (44% have used it) and line of credit loans (38%), no service has been used by more than a quarter of members. Awareness is weakest for IRA loans (61% unaware), share collateralized loans (54% unaware), and recreational loans (43% unaware), as @fig-r5 shows. All fourteen chi square tests are significant (p < .001 for each), so these patterns are not even splits that could be due to chance.
+
+The opportunity is less about announcing that loans exist and more about converting the large "aware but have not used" group, which is the single biggest category for 11 of the 14 services. One caution: 65% of members say they are unaware of the regular share account, which every member needs in order to join. That result is very likely a wording or coding problem on q13 rather than a real finding, and it should be checked before it is reported to the board.
+
+# R6: How effectively is the credit union operated?
+
+## R6: Descriptive statistics, statements and privacy
+
+```{r}
+#| label: tbl-r6-statements
+#| tbl-cap: "Account statements and confidentiality (q9 to q12)"
+bind_rows(
+  data |> freq_table(q9) |> mutate(item = "q9: Statement frequency"),
+  data |> freq_table(q10r) |> mutate(item = "q10: Statement accuracy"),
+  data |> freq_table(q11) |> mutate(item = "q11: Easy to understand"),
+  data |> freq_table(q12) |> mutate(item = "q12: Info kept confidential")
+) |>
+  select(item, response, n, percent) |>
+  kable(col.names = c("Item", "Response", "n", "%"))
+```
+
+## R6: Descriptive statistics, operations
+
+```{r}
+#| label: fig-r6-ops
+#| fig-cap: "Members agree with every operations statement, most strongly on confidentiality"
+#| fig-height: 4.5
+ops_items <- c("q31", "q32", "q33", "q34")
+
+data |>
+  select(all_of(ops_items)) |>
+  pivot_longer(everything(), names_to = "item", values_to = "code") |>
+  mutate(
+    statement = map_chr(item, \(v) var_label(data[[v]])),
+    agreement = case_when(
+      code <= 2 ~ "Disagree",
+      code == 3 ~ "Uncertain",
+      code >= 4 ~ "Agree"
+    ),
+    agreement = factor(agreement, levels = c("Disagree", "Uncertain", "Agree"))
+  ) |>
+  count(statement, agreement) |>
+  mutate(percent = n / sum(n) * 100, .by = statement) |>
+  ggplot(aes(x = percent, y = statement, fill = agreement)) +
+  geom_col() +
+  scale_fill_manual(values = c("#d95f0e", "#d9d9d9", "#2c7fb8")) +
+  labs(x = "Percent of members", y = NULL, fill = NULL) +
+  theme(legend.position = "top")
+```
+
+## R6: One sample t tests
+
+```{r}
+#| label: tbl-r6-ttest
+#| tbl-cap: "Rating items compared with the neutral midpoint (3 for five point items, 2.5 for q10)"
+bind_rows(
+  data |> t_summary("q10r", mu = 2.5),
+  data |> t_summary(c(ops_items, "q37r"), mu = 3)
+) |>
+  kable()
+```
+
+q37 (overall rating of how the credit union is managed and operated) is not listed for R6 in the construct table, but it asks the R6 question directly, so it is included as a check.
+
+## R6: Chi square goodness of fit tests
+
+```{r}
+#| label: tbl-r6-chisq
+#| tbl-cap: "Chi square goodness of fit for the categorical items (equal expected proportions across observed answers)"
+map_dfr(c("q9", "q11", "q12"), \(v) {
+  counts <- table(as_factor(data[[v]]), useNA = "no")
+  counts <- counts[counts > 0]
+  test <- chisq.test(counts)
+  tibble(
+    item = v,
+    label = var_label(data[[v]]),
+    observed = str_c(names(counts), " ", counts, collapse = "; "),
+    `chi square` = round(unname(test$statistic), 2),
+    df = unname(test$parameter),
+    p = format.pval(test$p.value, digits = 2, eps = 0.001)
+  )
+}) |>
+  kable()
+```
+
+## R6: Insight
+
+Members think the credit union runs well, with two specific soft spots. Statements are almost universally seen as accurate (95% good or excellent) and easy to understand (98%), and 84% rate overall management as good or excellent (q37: t = 16.12, p < .001). Every operations statement averages above neutral (@tbl-r6-ttest), led by personnel keeping financial information confidential (78% agree) and prompt loan processing (60% agree), as @fig-r6-ops shows.
+
+The two soft spots are worth the board's attention:
+
+* **Statement frequency.** About 23% of members say statements do not come often enough (@tbl-r6-statements). Nobody says too often, so offering more frequent or online statements is a low cost fix.
+* **Confidentiality of account information.** Although 78% agree that staff keep information confidential, 30% of those who answered q12 said "no" when asked if their account information is kept confidential, and 22 members skipped the question (χ² = 16.64, p < .001 confirms "yes" is the majority). The gap between those two answers suggests some members worry about who can see their records, which is worth a short follow up question in the next survey.
+
+Loan applications being simple and easy (q34) has the weakest agreement of the operations items, with 13% disagreeing, which connects back to R2: a smoother application could help keep borrowers from going elsewhere.
+
+## Summary
+
+| RQ | Key takeaway |
+|:--|:--|
+| R1 | Savings rates are seen as average, so they are probably not why people join. The q2 reasons are needed to answer fully. |
+| R2 | Members see no price advantage on loans and many are unsure how rates compare, which leaves room for competitors. |
+| R5 | Loan products are well known but lightly used; savings extras and IRA loans are largely unknown. The q13 result needs checking. |
+| R6 | Operations are rated well overall. Statement frequency and confidence in account privacy are the two areas to improve. |
+
+## Appendix: GitHub links
+
+**Published report and repository:**
+
+- [View my GitHub Pages report](https://naran115.github.io/ic11-2-case31/Naranjo,%20Aldo-IC11-2-Case31-Summary-R1-R2-R5-R6.html)
+- [GitHub repo for IC11-2 Case 31](https://github.com/naran115/ic11-2-case31)
